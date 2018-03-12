@@ -42,27 +42,31 @@ class Tokenizer:
 
     def _read_any(self):
         curr_token = self.src[self.pos]
-        if curr_token in Term.operators:
-            return self._read_term()
-        elif curr_token in Expr.operators:
-            return self._read_operator()
-        elif curr_token.isdigit():
-            return self._read_int()
-        elif curr_token.isspace():
-            self.pos += 1
-            return self._read_any()
-        elif curr_token == OPEN_COMMENT:
-            self.pos += 1
-            self.is_comment = True
-            return self._read_any()
+        if not self.is_comment:
+            if curr_token in Term.operators:
+                return self._read_term()
+            elif curr_token in Expr.operators:
+                return self._read_operator()
+            elif curr_token.isdigit():
+                return self._read_int()
+            elif curr_token.isspace():
+                self.pos += 1
+                return self._read_any()
+            elif curr_token == OPEN_COMMENT:
+                self.pos += 1
+                self.is_comment = True
+                return self._read_any()
+            else:
+                raise ValueError('Unexpected token at index {id_}: {token}'
+                                 .format(id_=self.pos,
+                                         token=self.src[self.pos]))
         elif curr_token == CLOSE_COMMENT:
             self.pos += 1
             self.is_comment = False
             return self._read_any()
         else:
-            raise ValueError('Unexpected token at index {id_}: {token}'
-                             .format(id_=self.pos,
-                                     token=self.src[self.pos]))
+            self.pos += 1
+            return self._read_any()
 
     def _read_term(self):
         curr_token = self.src[self.pos]
