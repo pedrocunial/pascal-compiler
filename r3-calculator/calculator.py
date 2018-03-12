@@ -6,9 +6,12 @@ PLUS = '+'
 MULT = '*'
 MINUS = '-'
 NUM = 'int'
+OPEN_PARENT = '('
+CLOSE_PARENT = ')'
 OPEN_COMMENT = '{'
 CLOSE_COMMENT = '}'
 STD_FILE_NAME = 'test.in'
+SIGNS = [PLUS, MINUS]
 
 
 class Token:
@@ -26,6 +29,9 @@ class Num(Token):
 
 class Expr(Token):
     operators = [PLUS, MINUS]
+
+class Parent(Token):
+    operators = [OPEN_PARENT, CLOSE_PARENT]
 
 class Tokenizer:
     def __init__(self, src, pos=0, curr=None):
@@ -51,6 +57,8 @@ class Tokenizer:
                 return self._read_term()
             elif curr_token in Expr.operators:
                 return self._read_operator()
+            elif curr_token in Parent.operators:
+                return self._read_parent()
             elif curr_token.isdigit():
                 return self._read_int()
             elif curr_token.isspace():
@@ -72,13 +80,22 @@ class Tokenizer:
             self.pos += 1
             return self._read_any()
 
+    def _read_parent(self):
+        curr_token = self.src[self.pos]
+        self.pos += 1
+        if curr_token not in Parent.operators:
+            raise ValueError('Unexpected token at index {id_}: {token}'
+                             .format(id_=self.pos,
+                                     token=self.src[self.pos]))
+        return Parent(curr_token, None)
+
     def _read_term(self):
         curr_token = self.src[self.pos]
         self.pos += 1
         if curr_token == MULT:
-            return Term(MULT, None)
+            return Term(MULT, MULT)
         elif curr_token == DIV:
-            return Term(DIV, None)
+            return Term(DIV, DIV)
         else:
             self.pos -= 1
             raise ValueError('Unexpected token at index {id_}: {token}'
@@ -118,39 +135,54 @@ class Parser:
     def __init__(self, src):
         self.tokens = Tokenizer(src)
 
-    def analyse_term(self):
+    def analyse_parent(self):
+        res = self.analyse_exp()
+        if self.val.type_ != CLOSE_PARENT:
+            raise ValueError('Unexpected token type, expected ), got {}'
+                             .format(self.val.type_))
+        return res
+
+    def analyse_unary(self, sign):
+        if sign not in SIGNS:
+            raise ValueError('Unexpected token type, expected sign, got {}'
+                             .format(self.val.type_))
+        return self.analyse_factor() if sign == PLUS else -self.analyse_factor()
+
+    def analyse_factor(self):
         self.val = self.tokens.get_next()
-        res = self.val.value
+        if self.val.type_ == OPEN_PARENT:
+            return self.analyse_parent()
+        elif self.val.type_ == MINUS:
+            return self.analyse_unary(MINUS)
+        elif self.val.type_ == PLUS:
+            return self.analyse_unary(PLUS)
+        elif self.val.type_ == NUM:
+            return self.val.value
+        else:
+            raise ValueError('Unexpected token type, got {}'
+                             .format(self.val.type_))
+
+    def analyse_term(self):
+        res = self.analyse_factor()
         self.val = self.tokens.get_next()
 
         while self.val is not None and self.val.type_ in Term.operators:
             if self.val.type_ == MULT:
-                self.val = self.tokens.get_next()
-                if self.val.type_ == NUM:
-                    res *= self.val.value
-                else:
-                    raise ValueError('Unexpected token type, expected int, got {}'
-                                     .format(self.val.type_))
-
+                res *= self.analyse_factor()
             elif self.val.type_ == DIV:
-                self.val = self.tokens.get_next()
-                if self.val.type_ == NUM:
-                    res //= self.val.value
-                else:
-                    raise ValueError('Unexpected token type, expected int, got {}'
-                                     .format(self.val.type_))
-
+                res //= self.analyse_factor()
             self.val = self.tokens.get_next()
         return res
 
     def analyse_exp(self):
         res = self.analyse_term()
-        while self.val is not None:
+        while self.val is not None and self.val.type_ in Expr.operators:
             if self.val.type_ == PLUS:
                 res += self.analyse_term()
             elif self.val.type_ == MINUS:
                 res -= self.analyse_term()
         return res
+
 
 if __name__ == '__main__':
     # for debugging
