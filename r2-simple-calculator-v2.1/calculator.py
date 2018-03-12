@@ -3,6 +3,8 @@ PLUS = '+'
 MULT = '*'
 MINUS = '-'
 NUM = 'int'
+OPEN_COMMENT = '{'
+CLOSE_COMMENT = '}'
 
 
 class Token:
@@ -26,6 +28,7 @@ class Tokenizer:
         self.src = src
         self.pos = pos
         self.curr = curr
+        self.is_comment = False
 
     def get_next(self):
         if self.pos < len(self.src):
@@ -35,11 +38,7 @@ class Tokenizer:
             return None
 
     def _read(self):
-        if self.curr is None and self.pos == 0:
-            self.curr = self._read_int()
-        else:
-            self.curr = self._read_any()
-
+        self.curr = self._read_any()
 
     def _read_any(self):
         curr_token = self.src[self.pos]
@@ -51,6 +50,14 @@ class Tokenizer:
             return self._read_int()
         elif curr_token.isspace():
             self.pos += 1
+            return self._read_any()
+        elif curr_token == OPEN_COMMENT:
+            self.pos += 1
+            self.is_comment = True
+            return self._read_any()
+        elif curr_token == CLOSE_COMMENT:
+            self.pos += 1
+            self.is_comment = False
             return self._read_any()
         else:
             raise ValueError('Unexpected token at index {id_}: {token}'
@@ -84,6 +91,8 @@ class Tokenizer:
                                      token=self.src[self.pos]))
 
     def _read_int(self):
+        # actually reads an expression with * or / until it "wraps" in a + or -
+        # token
         if not self.src[self.pos].isdigit():
             raise ValueError('Unexpected token at index {id_}: {token}'
                              .format(id_=self.pos,
@@ -105,7 +114,7 @@ class Parser:
         self.val = self.tokens.get_next()
         if self.val.type_ != NUM:
             raise ValueError('Unexpected token type, expected int, got {}'
-                                .format(self.val.type_))
+                             .format(self.val.type_))
         res = self.val.value
         self.val = self.tokens.get_next()
 
@@ -116,7 +125,7 @@ class Parser:
                     res *= self.val.value
                 else:
                     raise ValueError('Unexpected token type, expected int, got {}'
-                                        .format(self.val.type_))
+                                     .format(self.val.type_))
 
             elif self.val.type_ == DIV:
                 self.val = self.tokens.get_next()
@@ -124,7 +133,7 @@ class Parser:
                     res //= self.val.value
                 else:
                     raise ValueError('Unexpected token type, expected int, got {}'
-                                        .format(self.val.type_))
+                                     .format(self.val.type_))
 
             self.val = self.tokens.get_next()
         return res
