@@ -1,3 +1,6 @@
+import sys
+
+
 DIV = '/'
 PLUS = '+'
 MULT = '*'
@@ -5,6 +8,7 @@ MINUS = '-'
 NUM = 'int'
 OPEN_COMMENT = '{'
 CLOSE_COMMENT = '}'
+STD_FILE_NAME = 'test.in'
 
 
 class Token:
@@ -153,9 +157,16 @@ class Parser:
 
 if __name__ == '__main__':
     # for debugging
-    while True:
-        val = input()
-        if val == 'exit':
-            break
-        parser = Parser(val)
-        print('result: {}'.format(parser.analyse_exp()))
+    try:
+        file_name = sys.argv[1]
+    except IndexError:
+        # no arg was passed
+        file_name = STD_FILE_NAME
+
+    try:
+        with open(file_name, 'r') as fin:
+            for line in fin:
+                parser = Parser(line)
+                print('result: {}'.format(parser.analyse_exp()))
+    except IOError as err:
+        print(err)
