@@ -107,7 +107,7 @@ class Tokenizer:
                                      token=self.src[self.pos]))
         val = 0
         while self.src[self.pos].isdigit():
-            val += val * 10 + int(self.src[self.pos])
+            val = val * 10 + int(self.src[self.pos])
             self.pos += 1
             if self.pos >= len(self.src):
                 break
@@ -120,9 +120,6 @@ class Parser:
 
     def analyse_term(self):
         self.val = self.tokens.get_next()
-        if self.val.type_ != NUM:
-            raise ValueError('Unexpected token type, expected int, got {}'
-                             .format(self.val.type_))
         res = self.val.value
         self.val = self.tokens.get_next()
 
@@ -166,7 +163,8 @@ if __name__ == '__main__':
     try:
         with open(file_name, 'r') as fin:
             for line in fin:
+                line = line.strip()
                 parser = Parser(line)
-                print('result: {}'.format(parser.analyse_exp()))
+                print('{} = {}'.format(line, parser.analyse_exp()))
     except IOError as err:
         print(err)
