@@ -12,6 +12,8 @@ ASIGNER = ':='
 SEMICOLON = ';'
 UNDERSCORE = '_'
 NUM = 'int'
+VAR = 'var'
+RWORD = 'rword'
 OPEN_PARENT = '('
 CLOSE_PARENT = ')'
 OPEN_COMMENT = '{'
@@ -19,6 +21,7 @@ CLOSE_COMMENT = '}'
 STD_FILE_NAME = 'test.pas'
 SIGNS = [PLUS, MINUS]
 RESERVED_WORDS = [PRINT, BEGIN, END]
+TERMINATORS = [END, SEMICOLON]
 
 class Token:
     operators = []
@@ -38,6 +41,9 @@ class Expr(Token):
 
 class Parent(Token):
     operators = [OPEN_PARENT, CLOSE_PARENT]
+
+class Word(Token):
+    operators = []
 
 class SymbolTable:
     def __init__(self):
@@ -108,6 +114,9 @@ class UnOp(Node):
             return child_value
         elif self.value == MINUS:
             return -child_value
+        elif self.value == PRINT:
+            print(child_value)
+            return None
         else:
             raise ValueError('Unexpected value for UnOp, got', self.value)
 
@@ -153,6 +162,8 @@ class Tokenizer:
                 self.pos += 1
                 self.is_comment = True
                 return self._read_any()
+            elif curr_token.isalpha() or curr_token == UNDERSCORE:
+                return self._read_word()
             else:
                 raise ValueError('Unexpected token at index {id_}: {token}'
                                  .format(id_=self.pos,
@@ -164,6 +175,15 @@ class Tokenizer:
         else:
             self.pos += 1
             return self._read_any()
+
+    def _read_word(self):
+        word = self.src[self.pos]
+        char = word
+        while char.isalpha() or char == UNDERSCORE:
+            self.pos += 1
+            char = self.src[self.pos]
+            word += char
+        return Word(word, RWORD if word in RESERVED_WORDS else VAR)
 
     def _read_parent(self):
         curr_token = self.src[self.pos]
@@ -259,11 +279,26 @@ class Parser:
             node = BinOp(self.value.type_, [node, self.analyze_term()])
         return node
 
+    def analyze_cmd(self):
+        self.value = self.tokens.get_next()
+        if self.value.type_ == VAR:
+            # atribuicao
+            self.analyze_attr()
+        elif self.value.type_ == RWORD:
+            # reserved word
+            if self.value.value == PRINT:
+                self.analyze_print()
+            else:
+                raise ValueError('Unexpected word: ', self.value.value)
+
+
     def analyze_cmds(self):
-        begin = self.tokens.get_next()
-        if begin.value != BEGIN:
+        self.value = self.tokens.get_next()
+        if self.value.value != BEGIN:
             raise ValueError('Unexpected token type, expected {}, got {}'
                              .format(BEGIN, begin))
+        while self.value.value != END:
+            self.analyze_cmd()
 
 
 if __name__ == '__main__':
@@ -276,10 +311,10 @@ if __name__ == '__main__':
 
     try:
         with open(file_name, 'r') as fin:
-            src = ''.join(fin.readlines())
+            src = fin.read()
             parser = Parser(src)
             print(src)
-            # print(line, '=' , parser.analyze_expr().evaluate())
+            # print(line, '=' , parser.analyze_expr().evaluate(parser.symbol_table))
 
     except IOError as err:
         print(err)
