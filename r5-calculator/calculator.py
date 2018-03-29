@@ -10,6 +10,7 @@ END = 'end'
 PRINT = 'print'
 ASIGNER = ':='
 SEMICOLON = ';'
+DOUBLE_DOTS = ':'
 UNDERSCORE = '_'
 NUM = 'int'
 VAR = 'var'
@@ -20,7 +21,7 @@ OPEN_COMMENT = '{'
 CLOSE_COMMENT = '}'
 STD_FILE_NAME = 'test.pas'
 SIGNS = [PLUS, MINUS]
-RESERVED_WORDS = [PRINT, BEGIN, END]
+RESERVED_WORDS = [PRINT, BEGIN, END, ASIGNER]
 TERMINATORS = [END, SEMICOLON]
 
 class Token:
@@ -43,7 +44,10 @@ class Parent(Token):
     operators = [OPEN_PARENT, CLOSE_PARENT]
 
 class Word(Token):
-    operators = []
+    pass
+
+class RWord(Token):
+    operators = [ASIGNER, BEGIN, END, SEMICOLON, DOUBLE_DOTS]
 
 class SymbolTable:
     def __init__(self):
@@ -70,36 +74,25 @@ class Node:
         pass
 
 class BinOp(Node):
-    def to_int(key, symbol_table):
-        if isinstance(key, str):
-            return symbol_table.get_identifier(key)
-        elif isinstance(key, int) or isinstance(key, float):
-            return int(key)
 
     def evaluate(self, symbol_table):
         # this if is unnecessary
         if len(self.children) != 2:
             raise ValueError('Unexpected children len for node, expected 2, got',
                              len(self.children))
-        children_values = [c.evaluate(symbol_table) for c in self.children]
+        if self.value == ASIGNER:
+            symbol_table.set_identifier(self.child[0], self.child[1])
+            return None
 
-        # do math
+        children_values = [c.evaluate(symbol_table) for c in self.children]
         if self.value == PLUS:
-            return self.to_int(children_values[0], symbol_table) + \
-                self.to_int(children_values[1], symbol_table)
+            return children_values[0] + children_values[1]
         elif self.value == MINUS:
-            return self.to_int(children_values[0], symbol_table) - \
-                self.to_int(children_values[1], symbol_table)
+            return children_values[0] - children_values[1]
         elif self.value == DIV:
-            return self.to_int(children_values[0], symbol_table) // \
-                self.to_int(children_values[1], symbol_table)
+            return children_values[0] // children_values[1]
         elif self.value == MULT:
-            return self.to_int(children_values[0], symbol_table) * \
-                self.to_int(children_values[1], symbol_table)
-        elif self.value == ASIGNER:
-            symbol_table.set_identifier(children_values[0],
-                                        self.to_int(children_values[1],
-                                                    symbol_table))
+            return children_values[0] * children_values[1]
         else:  # this should NEVER happen!
             raise ValueError('Unexpected value for BinOp, got', self.value)
 
@@ -123,6 +116,10 @@ class UnOp(Node):
 class IntVal(Node):
     def evaluate(self, symbol_table):
         return self.value
+
+class VarOp(Node):
+    def evaluate(self, symbol_table):
+        return symbol_table.get_identifier(self.value)
 
 class NoOp(Node):
     pass
@@ -162,7 +159,8 @@ class Tokenizer:
                 self.pos += 1
                 self.is_comment = True
                 return self._read_any()
-            elif curr_token.isalpha() or curr_token == UNDERSCORE:
+            elif curr_token.isalpha() or curr_token == UNDERSCORE or \
+                 curr_token in RWord.operators:
                 return self._read_word()
             else:
                 raise ValueError('Unexpected token at index {id_}: {token}'
@@ -179,11 +177,17 @@ class Tokenizer:
     def _read_word(self):
         word = self.src[self.pos]
         char = word
+        if char == DOUBLE_DOTS:
+            self.pos += 1
+            word += self.src[self.pos]
+            if word.strip() != ASIGNER:
+                raise ValueError ('Unexpected token, expected \'=\', got', word[-1])
         while char.isalpha() or char == UNDERSCORE:
             self.pos += 1
             char = self.src[self.pos]
             word += char
-        return Word(word, RWORD if word in RESERVED_WORDS else VAR)
+        self.pos += 1
+        return Word(RWORD if word in RWord.operators else VAR, word.strip())
 
     def _read_parent(self):
         curr_token = self.src[self.pos]
@@ -233,13 +237,13 @@ class Tokenizer:
             self.pos += 1
             if self.pos >= len(self.src):
                 break
-
         return Num(NUM, val)
 
 class Parser:
     def __init__(self, src):
         self.tokens = Tokenizer(src)
         self.symbol_table = SymbolTable()
+        self.value = self.tokens.get_next()
 
     def analyze_parent(self):
         node = self.analyze_expr()
@@ -261,6 +265,8 @@ class Parser:
             return self.analyze_unary(PLUS)
         elif self.value.type_ == NUM:
             return IntVal(self.value.value, [])
+        elif self.value.type_ == VAR:
+            return VarOp(self.value.value, [])
         else:
             raise ValueError('Unexpected token type, expected factor, got {}',
                              self.value.type_)
@@ -279,26 +285,53 @@ class Parser:
             node = BinOp(self.value.type_, [node, self.analyze_term()])
         return node
 
+    def analyze_print(self):
+        self.value = self.tokens.get_next()
+        if self.value.type_ != OPEN_PARENT:
+            raise ValueError('Unexpected token type, expected (, got', self.value.type_)
+        node = self.analyze_expr()
+        self.value = self.tokens.get_next()
+        if self.value.type_ != CLOSE_PARENT:
+            raise ValueError('Unexpected token type, expected ), got', self.value.type_)
+        return UnOp(PRINT, [node])
+
+    def analyze_attr(self):
+        var = self.value.value
+        self.value = self.tokens.get_next()
+        if self.value.value != ASIGNER:
+            raise ValueError('Unexpected token type, expected \':=\' got',
+                             self.value.value)
+        return BinOp(ASIGNER, [VarOp(var, []), self.analyze_expr()])
+
     def analyze_cmd(self):
         self.value = self.tokens.get_next()
         if self.value.type_ == VAR:
             # atribuicao
-            self.analyze_attr()
+            return self.analyze_attr()
         elif self.value.type_ == RWORD:
             # reserved word
             if self.value.value == PRINT:
-                self.analyze_print()
+                return self.analyze_print()
             else:
                 raise ValueError('Unexpected word: ', self.value.value)
-
+        elif self.value.type_ == BEGIN:
+            return self.analyze_cmds()
+        else:
+            raise ValueError('Unexpected word: ', self.value.value)
 
     def analyze_cmds(self):
-        self.value = self.tokens.get_next()
         if self.value.value != BEGIN:
             raise ValueError('Unexpected token type, expected {}, got {}'
-                             .format(BEGIN, begin))
+                             .format(BEGIN, self.value.value))
+        node = None
         while self.value.value != END:
-            self.analyze_cmd()
+            node = self.analyze_cmd()
+            self.value = self.tokens.get_next()
+            if self.value.type_ not in TERMINATORS or self.value.value == BEGIN:
+                raise ValueError(
+                    'Unexpected token type, expected a terminator({}), got {}'.format(
+                        TERMINATORS + [BEGIN], self.value.value))
+        return node
 
 
 if __name__ == '__main__':
@@ -314,7 +347,7 @@ if __name__ == '__main__':
             src = fin.read()
             parser = Parser(src)
             print(src)
-            # print(line, '=' , parser.analyze_expr().evaluate(parser.symbol_table))
+            print(parser.analyze_cmds().evaluate(parser.symbol_table))
 
     except IOError as err:
         print(err)
