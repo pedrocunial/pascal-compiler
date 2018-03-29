@@ -327,10 +327,10 @@ class Parser:
         while self.value.value != END:
             node = self.analyze_cmd()
             self.value = self.tokens.get_next()
-            if self.value.value not in TERMINATORS or self.value.value == BEGIN:
-                raise ValueError(
-                    'Unexpected token type, expected a terminator({}), got {}'.format(
-                        TERMINATORS + [BEGIN], self.value.value))
+            # if self.value.value not in TERMINATORS and self.value.value != BEGIN:
+            #     raise ValueError(
+            #         'Unexpected token type, expected a terminator({}), got {}'.format(
+            #             TERMINATORS + [BEGIN], self.value.value))
         return node
 
 
