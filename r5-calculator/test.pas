@@ -1,7 +1,7 @@
 begin
-  x := 3 + 3 * 3;
+  x := (3 + 3) * 3;
   begin
-    y := x + 3;
+    y := (x + 3);
     print(y)
   end
   print(x);
