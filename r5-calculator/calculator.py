@@ -70,21 +70,26 @@ class Node:
         self.value = value
         self.children = children
 
-    def evaluate(self, symbol_table, is_root=False):
+    def evaluate(self, symbol_table):
         pass
+
+class Statements(Node):
+    def evaluate(self, symbol_table):
+        print("\n\n====== starting =======\n\n")
+        for child in self.children: child.evaluate(symbol_table)
 
 class BinOp(Node):
 
-    def evaluate(self, symbol_table, is_root=False):
+    def evaluate(self, symbol_table):
         # this if is unnecessary
-        if is_root:
-            print('\n\n===== output =====\n\n')
         if len(self.children) != 2:
             raise ValueError('Unexpected children len for node, expected 2, got',
                              len(self.children))
         if self.value == ASIGNER:
             print('doing asigner', self.children[0], self.children[1])
-            symbol_table.set_identifier(self.children[0], self.children[1])
+            symbol_table.set_identifier(self.children[0].value,
+                                        self.children[1].evaluate(symbol_table))
+            print(symbol_table.table)
             return None
 
         print('not doing asigner', [c for c in self.children])
@@ -101,10 +106,8 @@ class BinOp(Node):
             raise ValueError('Unexpected value for BinOp, got', self.value)
 
 class UnOp(Node):
-    def evaluate(self, symbol_table, is_root=False):
+    def evaluate(self, symbol_table):
         # this if is unnecessary
-        if is_root:
-            print('\n\n===== output =====\n\n')
         if len(self.children) != 1:
             raise ValueError('Unexpected children len for node, expected 1, got',
                              len(self.children))
@@ -121,16 +124,11 @@ class UnOp(Node):
             raise ValueError('Unexpected value for UnOp, got', self.value)
 
 class IntVal(Node):
-    def evaluate(self, symbol_table, is_root=False):
-        if is_root:
-            print('\n\n===== output =====\n\n')
-        print('ohihihi')
+    def evaluate(self, symbol_table):
         return self.value
 
 class VarOp(Node):
-    def evaluate(self, symbol_table, is_root=False):
-        if is_root:
-            print('\n\n===== output =====\n\n')
+    def evaluate(self, symbol_table):
         return symbol_table.get_identifier(self.value)
 
 class NoOp(Node):
@@ -154,6 +152,8 @@ class Tokenizer:
         self.curr = self._read_any()
 
     def _read_any(self):
+        if self.pos >= len(self.src):
+            return None
         curr_token = self.src[self.pos]
         if not self.is_comment:
             if curr_token in Term.operators:
@@ -342,7 +342,6 @@ class Parser:
         return BinOp(ASIGNER, [VarOp(var, []), self.analyze_expr()])
 
     def analyze_cmd(self):
-        self.value = self.tokens.get_next()
         print('cmd =', self.value.value)
         if self.value.type_ == VAR:
             # atribuicao
@@ -354,7 +353,8 @@ class Parser:
             elif self.value.value == BEGIN:
                 return self.analyze_cmds()
             else:
-                raise ValueError('Unexpected word {}, expected print'.format(self.value.value))
+                raise ValueError('Unexpected word {}, expected print'
+                                 .format(self.value.value))
         else:
             raise ValueError('Unexpected word {}, expected begin, print or a variable name'
                             .format(self.value.value))
@@ -363,15 +363,13 @@ class Parser:
         if self.value.value != BEGIN:
             raise ValueError('Unexpected token type, expected {}, got {}'
                              .format(BEGIN, self.value.value))
-        node = None
-        while self.value.value != END:
-            node = self.analyze_cmd()
-            # self.value = self.tokens.get_next()
-            if self.value.value not in TERMINATORS and self.value.value != BEGIN:
-                raise ValueError(
-                    'Unexpected token type, expected a terminator({}), got {}'.format(
-                        TERMINATORS + [BEGIN], self.value.value))
-        return node
+
+        nodes = []
+        self.value = self.tokens.get_next()
+        while self.value is not None and self.value.value not in TERMINATORS:
+            nodes.append(self.analyze_cmd())
+            self.value = self.tokens.get_next()
+        return Statements(None, nodes)
 
 
 if __name__ == '__main__':
@@ -386,9 +384,9 @@ if __name__ == '__main__':
         with open(file_name, 'r') as fin:
             src = fin.read()
             parser = Parser(src)
+            st = SymbolTable()
             print(src)
-            print(parser.analyze_cmds().evaluate(parser.symbol_table, 
-                                                 is_root=True))
+            parser.analyze_cmds().evaluate(st)
 
     except IOError as err:
         print(err)
