@@ -8,7 +8,7 @@ MINUS = '-'
 BEGIN = 'begin'
 END = 'end'
 PRINT = 'print'
-ASIGNER = ':='
+ASSIGNER = ':='
 SEMICOLON = ';'
 DOUBLE_DOTS = ':'
 UNDERSCORE = '_'
@@ -21,7 +21,7 @@ OPEN_COMMENT = '{'
 CLOSE_COMMENT = '}'
 STD_FILE_NAME = 'test.pas'
 SIGNS = [PLUS, MINUS]
-RESERVED_WORDS = [PRINT, BEGIN, END, ASIGNER]
+RESERVED_WORDS = [PRINT, BEGIN, END, ASSIGNER]
 TERMINATORS = [END, SEMICOLON]
 
 class Token:
@@ -47,7 +47,7 @@ class Word(Token):
     pass
 
 class RWord(Token):
-    operators = [ASIGNER, BEGIN, END, DOUBLE_DOTS, SEMICOLON, PRINT]
+    operators = [ASSIGNER, BEGIN, END, DOUBLE_DOTS, SEMICOLON, PRINT]
 
 class SymbolTable:
     def __init__(self):
@@ -85,14 +85,14 @@ class BinOp(Node):
         if len(self.children) != 2:
             raise ValueError('Unexpected children len for node, expected 2, got',
                              len(self.children))
-        if self.value == ASIGNER:
-            print('doing asigner', self.children[0], self.children[1])
+        if self.value == ASSIGNER:
+            print('doing ASSIGNER', self.children[0], self.children[1])
             symbol_table.set_identifier(self.children[0].value,
                                         self.children[1].evaluate(symbol_table))
             print(symbol_table.table)
             return None
 
-        print('not doing asigner', [c for c in self.children])
+        print('not doing ASSIGNER', [c for c in self.children])
         children_values = [c.evaluate(symbol_table) for c in self.children]
         if self.value == PLUS:
             return children_values[0] + children_values[1]
@@ -127,7 +127,7 @@ class IntVal(Node):
     def evaluate(self, symbol_table):
         return self.value
 
-class VarOp(Node):
+class Identifier(Node):
     def evaluate(self, symbol_table):
         return symbol_table.get_identifier(self.value)
 
@@ -196,7 +196,7 @@ class Tokenizer:
         if char == DOUBLE_DOTS:
             self.pos += 1
             word += char + self.src[self.pos]
-            if word.strip() != ASIGNER:
+            if word.strip() != ASSIGNER:
                 print('beep', word)
                 raise ValueError ('Unexpected token, expected =, got {}'\
                                     .format(word[-1]))
@@ -265,7 +265,6 @@ class Tokenizer:
 class Parser:
     def __init__(self, src):
         self.tokens = Tokenizer(src)
-        self.symbol_table = SymbolTable()
         self.value = self.tokens.get_next()
 
     def analyze_parent(self):
@@ -292,7 +291,7 @@ class Parser:
             return IntVal(self.value.value, [])
         elif self.value.type_ == VAR:
             # print('ohai')
-            return VarOp(self.value.value, [])
+            return Identifier(self.value.value, [])
         else:
             raise ValueError('Unexpected token type, expected factor, got {}',
                              self.value.type_)
@@ -336,10 +335,10 @@ class Parser:
         print('var_type =', self.value.type_)
         self.value = self.tokens.get_next()
         print('#analyze_attr', self.value.value)
-        if self.value.value != ASIGNER:
+        if self.value.value != ASSIGNER:
             raise ValueError('Unexpected token type, expected \':=\' got "{}"'
                                 .format(self.value.value))
-        return BinOp(ASIGNER, [VarOp(var, []), self.analyze_expr()])
+        return BinOp(ASSIGNER, [Identifier(var, []), self.analyze_expr()])
 
     def analyze_cmd(self):
         print('cmd =', self.value.value)
