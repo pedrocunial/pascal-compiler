@@ -7,7 +7,7 @@ MULT = '*'
 MINUS = '-'
 
 AND = 'and'
-OR = 'OR'
+OR = 'or'
 NOT = 'not'
 BEGIN = 'begin'
 END = 'end'
@@ -19,6 +19,9 @@ ELSE = 'else'
 THEN = 'then'
 WHILE = 'while'
 
+GT = '>'
+LT = '<'
+EQUALS = '='
 ASSIGNER = ':='
 SEMICOLON = ';'
 DOUBLE_DOTS = ':'
@@ -34,6 +37,7 @@ RWORD = 'rword'
 STD_FILE_NAME = 'test.pas'
 
 SIGNS = [PLUS, MINUS, NOT]
+COMPARISON = [GT, LT, EQUALS]
 TERMINATORS = [END, SEMICOLON]
 
 class Token:
@@ -87,9 +91,18 @@ class Node:
     def evaluate(self, symbol_table):
         pass
 
+class TriOp(Node):
+    def evaluate(self, symbol_table):
+        if self.value == IF:
+            self.eval_if(symbol_table)
+
+    def eval_if(self, st):
+        return self.children[1 if self.children[0].evaluate(st) else 2].evaluate(st)
+
 class Statements(Node):
     def evaluate(self, symbol_table):
-        for child in self.children: child.evaluate(symbol_table)
+        for child in self.children:
+            child.evaluate(symbol_table)
 
 class BinOp(Node):
 
@@ -104,6 +117,8 @@ class BinOp(Node):
                                         self.children[1].evaluate(symbol_table))
             # print(symbol_table.table)
             return None
+        elif self.value == WHILE:
+            return self.eval_while(symbol_table)
 
         # print('not doing ASSIGNER', [c for c in self.children])
         children_values = [c.evaluate(symbol_table) for c in self.children]
@@ -115,8 +130,25 @@ class BinOp(Node):
             return children_values[0] // children_values[1]
         elif self.value == MULT:
             return children_values[0] * children_values[1]
+        elif self.value == OR:
+            return children_values[0] or children_values[1]
+        elif self.value == AND:
+            return children_values[0] and children_values[1]
+        elif self.value == LT:
+            return children_values[0] < children_values[1]
+        elif self.value == GT:
+            return children_values[0] > children_values[1]
+        elif self.value == EQUALS:
+            return children_values[0] == children_values[1]
         else:  # this should NEVER happen!
             raise ValueError('Unexpected value for BinOp, got', self.value)
+
+    def eval_while(self, st):
+        expr = self.children[0]
+        stmt = self.children[1]
+        while expr.evaluate(st):
+            stmt.evaluate(st)
+
 
 class ReadOp(Node):
     def evaluate(self, symbol_table):
@@ -137,6 +169,8 @@ class UnOp(Node):
         elif self.value == PRINT:
             print(child_value)
             return None
+        elif self.value == NOT:
+            return not child_value
         else:
             raise ValueError('Unexpected value for UnOp, got', self.value)
 
@@ -175,7 +209,7 @@ class Tokenizer:
         if not self.is_comment:
             if curr_token in Term.operators:
                 return self._read_term()
-            elif curr_token in Expr.operators:
+            elif curr_token in Expr.operators or curr_token in COMPARISON:
                 return self._read_operator()
             elif curr_token in Parent.operators:
                 return self._read_parent()
@@ -215,7 +249,7 @@ class Tokenizer:
             word += char + self.src[self.pos]
             if word.strip() != ASSIGNER:
                 print('beep', word)
-                raise ValueError ('Unexpected token, expected =, got {}'\
+                raise ValueError('Unexpected token, expected =, got {}'\
                                     .format(word[-1]))
             self.pos += 1
             char = ''
@@ -241,28 +275,12 @@ class Tokenizer:
     def _read_term(self):
         curr_token = self.src[self.pos]
         self.pos += 1
-        if curr_token == MULT:
-            return Term(MULT, None)
-        elif curr_token == DIV:
-            return Term(DIV, None)
-        else:
-            self.pos -= 1
-            raise ValueError('Unexpected token at index {id_}: {token}'
-                             .format(id_=self.pos,
-                                     token=self.src[self.pos]))
+        return Term(curr_token, curr_token)
 
     def _read_operator(self):
         current_token = self.src[self.pos]
         self.pos +=1
-        if current_token == '+':
-            return Expr(PLUS, None)
-        elif current_token == '-':
-            return Expr(MINUS, None)
-        else:
-            self.pos -= 1
-            raise ValueError('Unexpected token at index {id_}: {token}'
-                             .format(id_=self.pos,
-                                     token=self.src[self.pos]))
+        return Expr(current_token, current_token)
 
     def _read_int(self):
         # actually reads an expression with * or / until it "wraps" in a + or -
@@ -294,9 +312,23 @@ class Parser:
     def analyze_unary(self, value):
         return UnOp(value, [self.analyze_factor()])
 
+    def analyze_not(self):
+        # self.value = self.tokens.get_next()
+        # if self.value is not None and self.value.type_ != OPEN_PARENT:
+        #     raise ValueError('Unexpected token type, expected (, got {}'
+        #                      .format(self.value.type_))
+        # factor = self.analyze_factor()
+        # self.value = self.tokens.get_next()
+        # if self.value is not None and self.value.type_ != CLOSE_PARENT:
+        #     raise ValueError('Unexpected token type, expected ), got {}'
+        #                      .format(self.value.type_))
+        print('#analyze_not')
+        return UnOp(NOT, [self.analyze_factor()])
+
+
     def analyze_factor(self):
         self.value = self.tokens.get_next()
-        # print(self.value.value)
+        print('#analyze_factor:', self.value.value)
         if self.value.type_ == OPEN_PARENT:
             return self.analyze_parent()
         elif self.value.type_ == MINUS:
@@ -311,54 +343,72 @@ class Parser:
             return Identifier(self.value.value, [])
         elif self.value.type_ == RWORD and self.value.value == READ:
             return self.analyze_read()
+        elif self.value.type_ == RWORD and self.value.value == NOT:
+            return self.analyze_not()
         else:
-            raise ValueError('Unexpected token type, expected factor, got {}',
-                             self.value.type_)
+            raise ValueError('Unexpected token type, expected factor, got {}'
+                             .format(self.value.type_))
 
     def analyze_read(self):
         self.value = self.tokens.get_next()
-        if self.value is not None and self.value.type_ == OPEN_PARENT:
-            raise ValueError('Unexpected token type, expected (, got {}',
-                             self.value.type_)
+        if self.value is not None and self.value.type_ != OPEN_PARENT:
+            raise ValueError('Unexpected token type, expected (, got {}'
+                             .format(self.value.type_))
 
         self.value = self.tokens.get_next()
-        if self.value is not None and self.value.type_ == CLOSE_PARENT:
-            raise ValueError('Unexpected token type, expected ), got {}',
-                             self.value.type_)
+        if self.value is not None and self.value.type_ != CLOSE_PARENT:
+            raise ValueError('Unexpected token type, expected ), got {}'
+                             .format(self.value.type_))
 
         return ReadOp(RWORD, [])
 
     def analyze_term(self):
+        print('#analyze_term start:', self.value.value)
         node = self.analyze_factor()
         print('#analyze_term', node.value)
         self.value = self.tokens.get_next()
         print('#analyze_term value', self.value.value)
-        while self.value is not None and self.value.type_ in Term.operators:
-            node = BinOp(self.value.type_, [node, self.analyze_factor()])
+        while self.value is not None and self.value.value in Term.operators:
+            print('#analyze_term -- in loop,', self.value.value)
+            node = BinOp(self.value.value, [node, self.analyze_factor()])
             self.value = self.tokens.get_next()
+        print('#analyze_term -- exit', self.value.value)
         return node
 
     def analyze_expr(self):
+        print('#analyze_expr', self.value.value)
+        node = self.analyze_simple_expr()
+        while self.value is not None and self.value.type_ in COMPARISON:
+            print('#analyze_expr -- in loop', self.value.value)
+            node = BinOp(self.value.value, [node, self.analyze_simple_expr()])
+        print('#analyze_expr -- exit', self.value.value)
+        return node
+
+    def analyze_simple_expr(self):
+        print('#analyze_simple_expr begin:', self.value.value)
         node = self.analyze_term()
-        print('#analyze_expr', node.value)
-        while self.value is not None and self.value.type_ in Expr.operators:
-            node = BinOp(self.value.type_, [node, self.analyze_term()])
-        print('#analyze_expr value', self.value.value)
+        print('#analyze_simple_expr node:', node.value)
+        print('#analyze_simple_expr value:', self.value.value)
+        while self.value is not None and self.value.value in Expr.operators:
+            print('#analyze_simple_expr -- in loop::', self.value.value)
+            node = BinOp(self.value.value, [node, self.analyze_term()])
+        print('#analyze_simple_expr -- exit:', self.value.value)
         return node
 
     def analyze_print(self):
         self.value = self.tokens.get_next()
         print('print = ', self.value.value)
         if self.value.type_ != OPEN_PARENT:
-            raise ValueError('Unexpected token type, expected (, got', self.value.type_)
+            raise ValueError('Unexpected token type, expected (, got {}'
+                             .format(self.value.type_))
         node = self.analyze_expr()
         # self.value = self.tokens.get_next()
         if self.value.value != CLOSE_PARENT:
             raise ValueError('Unexpected token type, expected ), got {}'
-                                .format(self.value.value))
+                             .format(self.value.value))
         res = UnOp(PRINT, [node])
-        print(UnOp)
-        self.value = self.tokens.get_next()
+        print('#analyze_print, result::',res)
+        # self.value = self.tokens.get_next()
         return res
 
     def analyze_attr(self):
@@ -372,6 +422,45 @@ class Parser:
                                 .format(self.value.value))
         return BinOp(ASSIGNER, [Identifier(var, []), self.analyze_expr()])
 
+    def analyze_while(self):
+        print('#analyze_while')
+        # self.value = self.tokens.get_next()
+        has_parentesis = self.value.type_ == OPEN_PARENT
+        expr_node = self.analyze_expr()
+        if has_parentesis and self.value.type_ != CLOSE_PARENT:
+            raise ValueError('Unexpected token type, expected ), got {}'
+                             .format(self.value.value))
+        print('#analyze_while -- read expr, reading do...', self.value.value)
+        # self.value = self.tokens.get_next()
+        if self.value.value != DO:
+            raise ValueError('Unexpected token type, expected "do", got {}'
+                             .format(self.value.value))
+        print('#analyze_while, read do! yay')
+        self.value = self.tokens.get_next()  # for the analyze_stmts bellow
+        return BinOp(WHILE, [expr_node, self.analyze_stmts()])
+
+    def analyze_if(self):
+        print('#analyze_if -- begin:', self.value.value)
+        expr_node = self.analyze_expr()
+        print('#analyze_if -- after expr:', self.value.value)
+        if self.value.value != THEN:
+            raise ValueError('Unexpected token type, expected "then", got {}'
+                             .format(self.value.value))
+        self.value = self.tokens.get_next()
+        print('#analyze_if -- before true branch', self.value.value)
+        true_branch = self.analyze_stmts()
+        print('#analyze_if -- after true branch', self.value.value)
+
+        self.value = self.tokens.get_next()
+        if self.value.value == ELSE:
+            self.value = self.tokens.get_next()  # expected to be a begin
+            false_branch = self.analyze_stmts()
+        else:
+            false_branch = NoOp(None, None)
+
+        return TriOp(IF, [expr_node, true_branch, false_branch])
+
+
     def analyze_stmt(self):
         # analyze statement
         print('stmt =', self.value.value)
@@ -384,8 +473,12 @@ class Parser:
                 return self.analyze_print()
             elif self.value.value == BEGIN:
                 return self.analyze_stmts()
+            elif self.value.value == WHILE:
+                return self.analyze_while()
+            elif self.value.value == IF:
+                return self.analyze_if()
             else:
-                raise ValueError('Unexpected word {}, expected print'
+                raise ValueError('Unexpected word {}, expected a reserved word'
                                  .format(self.value.value))
         else:
             raise ValueError('Unexpected word {}, expected begin, print or a variable name'
@@ -400,6 +493,7 @@ class Parser:
         nodes = []
         self.value = self.tokens.get_next()
         while self.value is not None and self.value.value not in TERMINATORS:
+            print('#analyze_stmts: ', self.value.value)
             nodes.append(self.analyze_stmt())
             self.value = self.tokens.get_next()
         return Statements(None, nodes)
