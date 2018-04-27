@@ -6,6 +6,8 @@ PLUS = '+'
 MULT = '*'
 MINUS = '-'
 
+TRUE = 'true'
+FALSE = 'false'
 AND = 'and'
 OR = 'or'
 NOT = 'not'
@@ -23,6 +25,7 @@ PROGRAM = 'program'
 GT = '>'
 LT = '<'
 DOT = '.'
+COMMA = ','
 EQUALS = '='
 ASSIGNER = ':='
 SEMICOLON = ';'
@@ -81,32 +84,48 @@ class RWord(Token):
 
 
 class Variable:
-    def __init__(self, type_, value):
+    possible_types = [INTEGER_TYPE, BOOLEAN_TYPE]
+
+    def __init__(self, type_, value=None):
         self.type_ = type_
+        self.value = value
+
+    def set_value(self, value):
         self.value = value
 
 
 class IntVar(Variable):
-    def __init__(self, value):
-        if type(value) != int:
-            raise ValueError('Unexpected type {} for integer variable'
-                             .format(type(value)))
+    possible_types = [INTEGER_TYPE]
 
+    def __init__(self, value=None):
         self.type_ = INTEGER_TYPE
+        self.value = value
+
+    def set_value(self, value):
+        try:
+            value = int(value)
+        except ValueError as e:
+            raise ValueError('Unmatching type for int variable')
         self.value = value
 
 
 class BoolVar(Variable):
-    def __init__(self, value):
-        if type(value) != bool:
-            raise ValueError('Unexpected type {} for boolean variable'
-                             .format(type(value)))
+    possible_types = [BOOLEAN_TYPE]
 
+    def __init__(self, value=None):
         self.type_ = BOOLEAN_TYPE
         self.value = value
 
+    def set_value(self, value):
+        if value == FALSE:
+            self.value = False
+        elif value == TRUE:
+            self.value = True
+        else:
+            self.value = bool(value)
 
-def variable_factory(self, type_, value):
+
+def variable_factory(self, type_, value=None):
     if type_ == INTEGER_TYPE:
         return IntVar(value)
     elif type_ == BOOLEAN_TYPE:
@@ -122,21 +141,22 @@ class SymbolTable:
     def __init__(self):
         self.table = {}
 
+    def add_identifier(self, identifier, value):
+        if identifier in self.table:
+            print('[WARN] identifier already in symbol table, overriding it')
+        self.table[identifier] = value
+
     def set_identifier(self, identifier, value):
         ''' value is a variable type '''
         if identifier not in self.table:
             raise ValueError('Undefined variable {}'.format(identifier))
-        if value.type_ != self.table[identifier]:
-            raise ValueError('Unexpected variable type {}, expected {}'
-                             .format(value.type_,
-                                     self.table[identifier].type_))
-        self.table[identifier] = value
+        self.table[identifier].set_value(value)
 
     def get_identifier(self, identifier):
         if identifier not in self.table:
             raise ValueError('Identifier {} not in symbol table'
                              .format(identifier))
-        return self.table[identifier]
+        return self.table[identifier].value
 
     def clear(self):
         self.table = {}
@@ -149,6 +169,12 @@ class Node:
 
     def evaluate(self, symbol_table):
         pass
+
+
+class Program(Node):
+    def evaluate(self, symbol_table):
+        for child in children:
+            child.evaluate()
 
 
 class TriOp(Node):
@@ -168,7 +194,6 @@ class Statements(Node):
 
 
 class BinOp(Node):
-
     def evaluate(self, symbol_table):
         # this if is unnecessary
         if len(self.children) != 2:
@@ -201,6 +226,11 @@ class BinOp(Node):
             return children_values[0] > children_values[1]
         elif self.value == EQUALS:
             return children_values[0] == children_values[1]
+        elif self.value == DOUBLE_DOTS:  # variable declarations
+            symbol_table.add_identifier(children_values[0],
+                                        variable_factory(children_values[1],
+                                                         None))
+            return
         else:  # this should NEVER happen!
             raise ValueError('Unexpected value for BinOp, got', self.value)
 
@@ -580,12 +610,40 @@ class Parser:
         self.value = self.tokens.get_next()
         return prog_name
 
+    def has_ended(self):
+        return self.value.value == DOT
+
+    def analyze_variable_declarations(self):
+        if self.value.value != VAR:
+            print('[WARN] No variable declaration block found')
+            return
+        self.value = self.tokens.get_next()  # first get variable name
+        var_names = []
+        while self.value.type_ == VAR:
+            var_names.append(self.value.value)
+            self.value = self.tokens.get_next()
+            if self.value.value == COMMA:
+                continue
+            elif self.value.value == DOUBLE_DOTS:
+                # get vars type
+                self.value = self.tokens.get_next()
+                var_type = self.value.value
+                if var_type not in Variable.possible_types:
+                    raise ValueError('Unsupported variable type {}'
+                                     .format(self.value.value))
+                # add variables to symbol table
+                for var in var_names:
+
+
+
     def run(self):
         self.program_name = self.analyze_program()
         print('PROGRAM NAME:', self.program_name)
-        if self.value.value == DOT:
+        if self.has_ended():
             # program end
-            return NoOp()
+            return NoOp(None, None)
+        self.value = self.tokens.get_next()
+        self.analyze_variable_declarations()
 
 
 if __name__ == '__main__':
