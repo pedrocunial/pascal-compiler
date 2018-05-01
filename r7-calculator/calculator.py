@@ -1,4 +1,5 @@
 import sys
+from random import randint
 
 
 DIV = '/'
@@ -46,7 +47,8 @@ STD_FILE_NAME = 'test.pas'
 
 SIGNS = [PLUS, MINUS, NOT]
 COMPARISON = [GT, LT, EQUALS]
-TERMINATORS = [END, SEMICOLON]
+TERMINATORS = [END, DOT]
+CONDITIONALS = [IF, ELSE]
 
 
 class Token:
@@ -80,7 +82,7 @@ class Word(Token):
 class RWord(Token):
     operators = [ASSIGNER, BEGIN, END, DOUBLE_DOTS,
                  SEMICOLON, PRINT, READ, AND, NOT, OR,
-                 IF, THEN, DO, WHILE, DOT]
+                 IF, THEN, DO, WHILE, DOT, COMMA, ELSE]
 
 
 class Variable:
@@ -125,7 +127,7 @@ class BoolVar(Variable):
             self.value = bool(value)
 
 
-def variable_factory(self, type_, value=None):
+def variable_factory(type_, value=None):
     if type_ == INTEGER_TYPE:
         return IntVar(value)
     elif type_ == BOOLEAN_TYPE:
@@ -173,8 +175,14 @@ class Node:
 
 class Program(Node):
     def evaluate(self, symbol_table):
-        for child in children:
-            child.evaluate()
+        for child in self.children:
+            child.evaluate(symbol_table)
+
+
+class VarBlock(Node):
+    def evaluate(self, symbol_table):
+        for child in self.children:
+            child.evaluate(symbol_table)
 
 
 class TriOp(Node):
@@ -206,6 +214,11 @@ class BinOp(Node):
             return None
         elif self.value == WHILE:
             return self.eval_while(symbol_table)
+        elif self.value == DOUBLE_DOTS:  # variable declarations
+            symbol_table.add_identifier(self.children[0],
+                                        variable_factory(self.children[1],
+                                                         None))
+            return
 
         children_values = [c.evaluate(symbol_table) for c in self.children]
         if self.value == PLUS:
@@ -226,11 +239,6 @@ class BinOp(Node):
             return children_values[0] > children_values[1]
         elif self.value == EQUALS:
             return children_values[0] == children_values[1]
-        elif self.value == DOUBLE_DOTS:  # variable declarations
-            symbol_table.add_identifier(children_values[0],
-                                        variable_factory(children_values[1],
-                                                         None))
-            return
         else:  # this should NEVER happen!
             raise ValueError('Unexpected value for BinOp, got', self.value)
 
@@ -315,16 +323,16 @@ class Tokenizer:
             elif curr_token.isspace():
                 self.pos += 1
                 return self._read_any()
-            elif curr_token == SEMICOLON:
+            elif curr_token == SEMICOLON or curr_token == COMMA:
                 self.pos += 1
                 print('#read_any', curr_token)
-                return RWord(RWORD, SEMICOLON)
+                return RWord(RWORD, curr_token)
             elif curr_token == OPEN_COMMENT:
                 self.pos += 1
                 self.is_comment = True
                 return self._read_any()
-            elif curr_token.isalpha() or curr_token == UNDERSCORE or \
-                 curr_token in RWord.operators:
+            elif (curr_token.isalpha() or curr_token == UNDERSCORE or
+                  curr_token in RWord.operators):
                 return self._read_word()
             else:
                 raise ValueError('Unexpected token at index {id_}: {token}'
@@ -345,9 +353,7 @@ class Tokenizer:
             self.pos += 1
             word += char + self.src[self.pos]
             if word.strip() != ASSIGNER:
-                print('beep', word)
-                raise ValueError('Unexpected token, expected =, got {}'
-                                 .format(word[-1]))
+                return Word(RWORD, DOUBLE_DOTS)
             self.pos += 1
             char = ''
 
@@ -399,7 +405,6 @@ class Parser:
     def __init__(self, src):
         self.tokens = Tokenizer(src)
         self.value = self.tokens.get_next()
-        self.program_name = None
 
     def analyze_parent(self):
         node = self.analyze_expr()
@@ -542,11 +547,14 @@ class Parser:
 
         self.value = self.tokens.get_next()
         if self.value.value == ELSE:
+            print('#analyze_if -- found else')
             self.value = self.tokens.get_next()  # expected to be a begin
             false_branch = self.analyze_stmts()
         else:
+            print('#analyze_if -- no else')
             false_branch = NoOp(None, None)
 
+        print('#analyze_if -- EXITING')
         return TriOp(IF, [expr_node, true_branch, false_branch])
 
     def analyze_stmt(self):
@@ -574,6 +582,8 @@ class Parser:
 
     def analyze_stmts(self):
         # analyze statements
+        _id = randint(0, 10000)  # for identifing inner stmts (debug)
+        print('#analyze_stmts -- begin #{}'.format(_id))
         if self.value.value != BEGIN:
             raise ValueError('Unexpected token type, expected {}, got {}'
                              .format(BEGIN, self.value.value))
@@ -581,9 +591,16 @@ class Parser:
         nodes = []
         self.value = self.tokens.get_next()
         while self.value is not None and self.value.value not in TERMINATORS:
-            print('#analyze_stmts: ', self.value.value)
+            print('#analyze_stmts#{}:'.format(_id), self.value.value)
             nodes.append(self.analyze_stmt())
             self.value = self.tokens.get_next()
+            print('#analyze_stmts#{} -- next value: {}'
+                  .format(_id, self.value.value))
+            while self.value is not None and self.value.value == SEMICOLON:
+                # allows for infinite ; tokens
+                print('#analyze_stmts, got semicolon')
+                self.value = self.tokens.get_next()
+
         return Statements(None, nodes)
 
     def analyze_program(self):
@@ -619,12 +636,14 @@ class Parser:
             return
         self.value = self.tokens.get_next()  # first get variable name
         var_names = []
+        var_nodes = []
         while self.value.type_ == VAR:
             var_names.append(self.value.value)
             self.value = self.tokens.get_next()
             if self.value.value == COMMA:
-                continue
-            elif self.value.value == DOUBLE_DOTS:
+                print('#analyze_var_dec inside loop, got comma')
+                self.value = self.tokens.get_next()
+            if self.value.value == DOUBLE_DOTS:
                 # get vars type
                 self.value = self.tokens.get_next()
                 var_type = self.value.value
@@ -633,17 +652,27 @@ class Parser:
                                      .format(self.value.value))
                 # add variables to symbol table
                 for var in var_names:
-
-
+                    var_nodes.append(BinOp(DOUBLE_DOTS, [var, var_type]))
+                var_names = []
+                self.value = self.tokens.get_next()
+                if self.value.value != SEMICOLON:
+                    raise ValueError('Excpected semicolon, got {}'
+                                     .format(self.value.value))
+                self.value = self.tokens.get_next()
+        return var_nodes
 
     def run(self):
-        self.program_name = self.analyze_program()
-        print('PROGRAM NAME:', self.program_name)
+        program_name = self.analyze_program()
         if self.has_ended():
             # program end
             return NoOp(None, None)
-        self.value = self.tokens.get_next()
-        self.analyze_variable_declarations()
+        print('#run -- before var_nodes', self.value.value)
+        var_nodes = self.analyze_variable_declarations()
+        body_nodes = self.analyze_stmts()
+        return Program(program_name, [
+            VarBlock(None, var_nodes),
+            body_nodes
+        ])
 
 
 if __name__ == '__main__':
