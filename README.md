@@ -13,7 +13,7 @@ Nova EBNF
 programa = progdec, {vardec}, {comandos}, '.';
 progdec = 'program', identificador, ';';
 vardec = 'var', {identificador, {',', identificador}, ':', tipo, ';'};
-tipo = ('boolean', 'integer');
+tipo = ('boolean' | 'integer');
 comandos = 'begin', comando, {';', comando}, 'end';
 comando = atribuicao | comandos | print | if | while;
 if = 'if', expressao, 'then', comandos, ['else', comandos];
