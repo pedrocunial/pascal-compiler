@@ -10,13 +10,17 @@ fact = '(' expr ')' | num | ('-'|'+') fact
 
 Nova EBNF
 ```
+programa = progdec, {vardec}, {comandos}, '.';
+progdec = 'program', identificador, ';';
+vardec = 'var', {identificador, {',', identificador}, ':', tipo, ';'};
+tipo = ('boolean', 'integer');
 comandos = 'begin', comando, {';', comando}, 'end';
 comando = atribuicao | comandos | print | if | while;
 if = 'if', expressao, 'then', comandos, ['else', comandos];
 while = 'while', expressao, 'do', comandos;
 print = 'print', '(', expressao, ')';
 atribuicao = identificador, ':=', (expressao | read);
-read = 'read', '(', num, ')';
+read = 'read', '(', ')';
 expressao = expressao_simples, {('<' | '>' | '='), expressao_simples};
 expressao_simples = termo, {('or' | '+', '-'), termo};
 termo = fator, { ('*' | '/' | 'and'), fator };
