@@ -2,18 +2,19 @@ program xdk;
 
 var
    x,z: integer;
-   y:  boolean;
+   y,k:  boolean;
 
 
 begin
    x := read();
    y := x > 2;
+   k := y or y;
    while y do
    begin
       if x > 10 then
       begin
         z := x * 3;
-        print(z);
+        print(y or y);
         print((x - 13) and 1)
       end
       else

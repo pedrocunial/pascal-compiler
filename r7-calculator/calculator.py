@@ -542,14 +542,14 @@ class Parser:
                              .format(self.value.value))
         self.value = self.tokens.get_next()
         print('#analyze_if -- before true branch', self.value.value)
-        true_branch = self.analyze_stmts()
+        true_branch = self.analyze_stmt()
         print('#analyze_if -- after true branch', self.value.value)
 
         self.value = self.tokens.get_next()
         if self.value.value == ELSE:
             print('#analyze_if -- found else')
-            self.value = self.tokens.get_next()  # expected to be a begin
-            false_branch = self.analyze_stmts()
+            self.value = self.tokens.get_next()
+            false_branch = self.analyze_stmt()
         else:
             print('#analyze_if -- no else')
             false_branch = NoOp(None, None)
